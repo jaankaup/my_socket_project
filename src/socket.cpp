@@ -26,19 +26,15 @@ void Socket::Connect(const std::string& address, const std::string& port)
      * Linkitetyst‰ listasta etsit‰‰n sellainen addrinfo jolla saadaan muodostettua yhteys.
      * Ptr on pointeri jolla k‰yd‰‰n l‰pi resultia kunnes/jos lˆytyy sopiva addrinfo jolla yhteydenmuodostus onnistuu.
      */
-     std::unique_ptr<addrinfo,std::function<void(addrinfo*)>>
-            pResult(nullptr,[](addrinfo* ar) {freeaddrinfo(ar);});
-     //std::unique_ptr<addrinfo> ptr;
+     // TODO:
+     //std::unique_ptr<addrinfo,std::function<void(addrinfo*)>>
+     //       pResult(nullptr,[](addrinfo* ar) {freeaddrinfo(ar);});
 
      addrinfo* result = nullptr;
      addrinfo* ptr = nullptr;
 
      // Luodaan oma addrinfo, jolla filteroidaan halutunlaisia yhteyksi‰.
-     addrinfo hints;
-     memset(reinterpret_cast<char*>(&hints), 0, sizeof(hints));
-     hints.ai_family = static_cast<int>(mSocketInfo.socketFamily);
-     hints.ai_socktype = static_cast<int>(mSocketInfo.socketType);
-     hints.ai_protocol = static_cast<int>(mSocketInfo.socketProtocol);
+     addrinfo hints = CreateHints();
 
     /*
      * Selvitet‰‰n toisen osapuolen osoite ym. yhteydenottoon tarvittavaa tietoa.
@@ -61,10 +57,11 @@ void Socket::Connect(const std::string& address, const std::string& port)
     for (ptr = result ; ptr != nullptr ; ptr = ptr->ai_next)
     {
         /* Luodaan uusi socket yhteytt‰ varten. */
-        //sockfd_ = CreateSocket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
-        //if (sockfd_ == INVALID_SOCKET) return false;
+        CreateSocket(); //TODO: k‰sittele mahdollinen runtime_error. Ts. vapauta resurssit.
+        //if (mSocket == INVALID_SOCKET) return false;
 
         /* Yritet‰‰n ottaa yhteytt‰ luodulla socketilla. */
+        //TODO: k‰sittele mahdollinen runtime_error. Ts. vapauta resurssit.
         status = connect( mSocket, ptr->ai_addr, static_cast<int>(ptr->ai_addrlen));
 
         /* Saatiin yhteys!. */
@@ -72,7 +69,6 @@ void Socket::Connect(const std::string& address, const std::string& port)
         {
             connected = true;
             break;
-            //CloseSocket();
         }
     }
 
@@ -81,9 +77,12 @@ void Socket::Connect(const std::string& address, const std::string& port)
     /* Ei saatu yhteytt‰ serveriin. */
     if (!connected)
     {
+        Close();
         throw std::runtime_error("Socket.Connect : connection failed.");
     }
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 int Socket::Receive(std::string& s)
 {
@@ -130,6 +129,8 @@ int Socket::Receive(std::string& s)
     return recBytes;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 int Socket::ReceiveFrom(std::string& s, EndPoint& remote)
 {
     int recBytes = 0;
@@ -140,7 +141,7 @@ int Socket::ReceiveFrom(std::string& s, EndPoint& remote)
     int result = 0;
     do
     {
-        /* Stekataan voidaanko socketista lukea. Odotetaan korkeintaan 200 millisekuntia. */
+        /* Tsekataan voidaanko socketista lukea. Odotetaan korkeintaan 200 millisekuntia. */
         bool ready = CheckStatus(200, SocketStatus::READ);
         if (!ready) { return recBytes; }
 
@@ -179,19 +180,20 @@ int Socket::ReceiveFrom(std::string& s, EndPoint& remote)
     return recBytes;
 }
 
-int Socket::Send(const char* data)
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int Socket::Send(const std::string& data)
 {
+    const char* dataCFormat = data.c_str();
     bool ready = CheckStatus(10, SocketStatus::WRITE);
     if (!ready) { std::cout << "EI VOI KIRJOITTAA" << std::endl; return 0; }
 
-    int result = send(sockfd_, data, static_cast<int>(strlen(data)), 0);
+    int result = send(mSocket, dataCFormat, static_cast<int>(strlen(dataCFormat)), 0);
 
     if (result == SOCKET_ERROR)
     {
-        std::cout << "Virhe Socket::Send() -> send() ep‰onnistui." << std::endl;
-        Error::PrintError(WSAGetLastError());
-        CloseSocket();
-        return result;
+        Close();
+        throw std::runtime_error("Socket::Send(). " + SocketError::getError(WSAGetLastError()));
     }
 
     return result;
@@ -201,38 +203,31 @@ int Socket::Send(const char* data)
 
 int Socket::SendTo(const std::string& data, EndPoint& remote)
 {
-    return SendTo(data.c_str(), remote);
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-int Socket::SendTo(const char* data, EndPoint& remote)
-{
+    const char* dataCString = data.c_str();
     bool ready = CheckStatus(10, SocketStatus::WRITE);
     if (!ready) { std::cout << "EI VOI KIRJOITTAA" << std::endl; return 0; }
 
-    int result = sendto(sockfd_,
-                        data,
-                        static_cast<int>(strlen(data)),
+    int result = sendto(mSocket,
+                        dataCString,
+                        static_cast<int>(strlen(dataCString)),
                         0,
                         reinterpret_cast<sockaddr*>(remote()),
                         sizeof(struct sockaddr_in));
 
     if (result == SOCKET_ERROR)
     {
-        std::cout << "Virhe Socket::SendTo() -> send() ep‰onnistui." << std::endl;
-        Error::PrintError(WSAGetLastError());
-        CloseSocket();
-        return result;
+        Close();
+        throw std::runtime_error("Socket::SendTo(). " + SocketError::getError(WSAGetLastError()));
     }
-
     return result;
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void Socket::Close()
 {
     // Jos socket on invalid-tilassa, niin poistutaan.
-    if (sockfd_ == INVALID_SOCKET) return;
+    if (mSocket == INVALID_SOCKET) return;
     int result = closesocket(mSocket);
     if (result != 0)
     {
@@ -240,6 +235,8 @@ void Socket::Close()
     }
     mSocket = INVALID_SOCKET;
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void Socket::CreateSocket()
 {
@@ -250,6 +247,8 @@ void Socket::CreateSocket()
     if (s == INVALID_SOCKET) throw std::runtime_error(SocketError::getError(WSAGetLastError()));
     else mSocket = s;
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool Socket::SetNonBlockingStatus(bool status)
 {
@@ -270,6 +269,8 @@ bool Socket::SetNonBlockingStatus(bool status)
     return true;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 int Socket::GetAvailableBytes(const unsigned int mm_seconds)
 {
     using namespace std::chrono;
@@ -288,6 +289,65 @@ int Socket::GetAvailableBytes(const unsigned int mm_seconds)
 
     return static_cast<int>(bytesAvailable);
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool Socket::Bind()
+{
+    addrinfo* result = nullptr;
+    addrinfo* ptr = nullptr;
+
+    addrinfo hints = CreateHints();
+
+    hints.ai_flags = AI_PASSIVE;
+
+    /* Muutetaan ip:t sellaiseen muotoon ett‰ getaddrinfo ymm‰rt‰‰. */
+    const char* ip = mEndpoint.GetIpAddress();
+    if (strcmp(ip, "0.0.0.0") == 0) ip = NULL;
+    else if (strcmp(ip, "127.0.0.1") == 0) ip = "localhost";
+
+    int status = getaddrinfo(ip,
+                             std::to_string(mEndpoint.GetPortNumber()).c_str(),
+                             &hints,
+                             &result);
+
+    if (status != 0)
+    {
+        std::cout << "Socket::Bind() -> getaddrinfo() ep‰onnistui." << std::endl;
+        // Error::PrintError(WSAGetLastError());
+        return false;
+    }
+
+    for (ptr = result ; ptr != nullptr ; ptr = ptr->ai_next)
+    {
+        mSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+        if (mSocket == INVALID_SOCKET)
+        {
+            std::cout << "Socket::Bind() -> socket() ep‰onnistui." << std::endl;
+            //Error::PrintError(WSAGetLastError());
+            return false;
+        }
+
+        status = bind(mSocket, result->ai_addr, static_cast<int>(result->ai_addrlen));
+        if (status == SOCKET_ERROR)
+        {
+            Close();
+            continue;
+        }
+    }
+
+    freeaddrinfo(result);
+
+    if (mSocket == INVALID_SOCKET)
+    {
+        std::cout << "Varoitus: Socket::Bind() -> Ei saatu bindattua." << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool Socket::CheckStatus(const int timeLimit_msec, const SocketStatus status)
 {
@@ -321,4 +381,15 @@ bool Socket::CheckStatus(const int timeLimit_msec, const SocketStatus status)
     while (result == SOCKET_ERROR && errno == EINTR);
     if (result > 0 && FD_ISSET(mSocket, &sockets)) return true;
     return false;
+}
+
+
+addrinfo Socket::CreateHints() const
+{
+     addrinfo hints;
+     memset(reinterpret_cast<char*>(&hints), 0, sizeof(hints));
+     hints.ai_family = static_cast<int>(mSocketInfo.socketFamily);
+     hints.ai_socktype = static_cast<int>(mSocketInfo.socketType);
+     hints.ai_protocol = static_cast<int>(mSocketInfo.socketProtocol);
+     return hints;
 }

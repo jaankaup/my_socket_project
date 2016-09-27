@@ -23,7 +23,7 @@ enum class SocketProtocol: int {SOCKET_IPPROTO_TCP = IPPROTO_TCP,
 enum class SocketStatus {READ,WRITE /*, ERROR = 2*/};
 
 /*
- * Yksinkertainen sokcet luokka.
+ * Yksinkertainen socket luokka.
  */
 class Socket
 {
@@ -50,20 +50,35 @@ class Socket
 
         int SendTo(const std::string& data, EndPoint& remote);
 
-        /// Asettaa socketin non-blocking tilaan jos status = true tai blocking tilaan jo status on false.
+        /// Bindataan socket ennalta m‰‰r‰ttyyn porttiin. T‰m‰n j‰lkeen voi alkaa kuunnella ko. porttia
+        /// Listen() j‰senfunktiolla.
+        /// Palauttaa true jos onnistuu ja false jos ep‰onnistuu. Ep‰onnistuessaan Bind()
+        /// sulkee socketin automaattisesti.
+        bool Bind();
+
+        /// Asettaa socketin non-blocking tilaan jos status == true tai blocking tilaan jo status == false.
         bool SetNonBlockingStatus(bool status);
 
     protected:
 
     private:
+        /// Varsinainen socket.
         SOCKET mSocket = INVALID_SOCKET;
 
+        /// Socketin endpoint.
+        EndPoint mEndpoint;
+
+        /// Rakenne, jossa s‰ilytet‰‰n socketin tyyppitiedot.
         struct SocketInfo
         {
             SocketFamily socketFamily;
             SocketType socketType;
             SocketProtocol socketProtocol;
         } mSocketInfo;
+
+        /// Luo addrinfon ainoastaan mSocketInfosta. Tarvitaan silloin, kun filteroidaan t‰m‰n socketin
+        /// kaltaisia yhteyksi‰. Vrt. Bind() ja Connect().
+        addrinfo CreateHints() const;
 
         /// Luo uuden mSocketin.
         void CreateSocket();
@@ -77,11 +92,6 @@ class Socket
         /// Jos taas satus = SocketStatus::WRITE niin funktio palauttaa true jos socket on valmis l‰hett‰m‰‰n dataa. Muutoin palauttaa false.
         /// @timeLimitMilliSec_msec on aika millisekunteina, joka function odottaa saadakseen vastauksen.
         bool CheckStatus(const int timeLimitMilliSec, const SocketStatus status);
-
-
-
-        //constexpr int DEFAULT_BUFLEN = 1028;
-        //constexpr const char* DEFAULT_PORT = "25000";
 };
 
 #endif // SOCKET_H

@@ -17,7 +17,7 @@ class WinSock
     protected:
 
     private:
-        /// Rakennnin. Heitt‰‰ poikkeuksen ep‰onnistuessaan.
+        /// Rakennin. Heitt‰‰ poikkeuksen ep‰onnistuessaan.
         WinSock();
 };
 
