@@ -17,7 +17,19 @@ Socket::~Socket()
 {
 
 }
-
+/*
+Socket& Socket::operator=(Socket&& other)
+{
+    if (this != &other)
+    {
+        Close();
+        mSocket = other.mSocket;
+        other.mSocket = INVALID_SOCKET;
+        return *this;
+    }
+    return *this;
+}
+*/
 void Socket::Connect(const std::string& address, const std::string& port)
 {
     /*
@@ -48,20 +60,20 @@ void Socket::Connect(const std::string& address, const std::string& port)
     if (status != 0)
     {
         freeaddrinfo(result);
-        throw std::runtime_error("Socket.Connect : " + SocketError::getError(WSAGetLastError()));
+        throw std::runtime_error("Socket::Connect : " + SocketError::getError(WSAGetLastError()));
     }
 
     bool connected = false;
+    CreateSocket();
 
     /* Etsitään toisen yhteysosapuolelta saatujen addrinfo:jen joukosta sellaista joka vastaisi hints:a. */
     for (ptr = result ; ptr != nullptr ; ptr = ptr->ai_next)
     {
-        /* Luodaan uusi socket yhteyttä varten. */
-        CreateSocket(); //TODO: käsittele mahdollinen runtime_error. Ts. vapauta resurssit.
+        /* Pitääkö luoda uusi socket joka kerta? */
+        //CreateSocket(); //TODO: käsittele mahdollinen runtime_error. Ts. vapauta resurssit.
         //if (mSocket == INVALID_SOCKET) return false;
 
         /* Yritetään ottaa yhteyttä luodulla socketilla. */
-        //TODO: käsittele mahdollinen runtime_error. Ts. vapauta resurssit.
         status = connect( mSocket, ptr->ai_addr, static_cast<int>(ptr->ai_addrlen));
 
         /* Saatiin yhteys!. */
@@ -77,8 +89,8 @@ void Socket::Connect(const std::string& address, const std::string& port)
     /* Ei saatu yhteyttä serveriin. */
     if (!connected)
     {
-        Close();
-        throw std::runtime_error("Socket.Connect : connection failed.");
+        //Close();
+        throw std::runtime_error("Socket::Connect : connection failed.");
     }
 }
 
@@ -93,7 +105,7 @@ int Socket::Receive(std::string& s)
     int result = 0;
     do
     {
-        /* Stekataan voidaanko socketista lukea. Odotettaan korkeintaan 200 millisekuntia. */
+        /* Tsekataan voidaanko socketista lukea. Odotettaan korkeintaan 200 millisekuntia. */
         bool ready = CheckStatus(200, SocketStatus::READ);
         if (!ready) { return recBytes; }
 
@@ -119,6 +131,10 @@ int Socket::Receive(std::string& s)
         else if (result == SOCKET_ERROR)
         {
             int error = WSAGetLastError();
+            // WSAEWOULDBLOCK ei ole oikeastaan virhe. Jos socket on nonblockin tilassa ja juuri tällä hetkellä
+            // puskurissa ei ole mitään luettavaa, niin palautetaan nykyinen sisältö, eikä jäädä lukemaan lisää.
+            // Socketin pitäisi käydä lukemassa purskuria uudestaan hieman myöhemmin, jotta kaikki mahdollinen
+            // data saataisiin luettua.
             if (error == WSAEWOULDBLOCK) {
                 return recBytes;
             }
@@ -192,7 +208,7 @@ int Socket::Send(const std::string& data)
 
     if (result == SOCKET_ERROR)
     {
-        Close();
+        //Close();
         throw std::runtime_error("Socket::Send(). " + SocketError::getError(WSAGetLastError()));
     }
 
@@ -216,7 +232,7 @@ int Socket::SendTo(const std::string& data, EndPoint& remote)
 
     if (result == SOCKET_ERROR)
     {
-        Close();
+        //Close();
         throw std::runtime_error("Socket::SendTo(). " + SocketError::getError(WSAGetLastError()));
     }
     return result;
@@ -234,6 +250,19 @@ void Socket::Close()
         throw std::runtime_error(SocketError::getError(WSAGetLastError()));
     }
     mSocket = INVALID_SOCKET;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Socket Socket::Accept()
+{
+    SOCKET result = accept(mSocket, nullptr, nullptr);
+    if (result == INVALID_SOCKET)
+    {
+        throw std::runtime_error("Socket::Accept. " + SocketError::getError(WSAGetLastError()));
+    }
+    Socket s(result);
+    return s;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -286,7 +315,6 @@ int Socket::GetAvailableBytes(const unsigned int mm_seconds)
         milliseconds delta = duration_cast<milliseconds>(t2 - t1);
         if (timeToWait.count()-delta.count() < 0) return bytesAvailable;
     }
-
     return static_cast<int>(bytesAvailable);
 }
 
@@ -343,7 +371,6 @@ bool Socket::Bind()
         std::cout << "Varoitus: Socket::Bind() -> Ei saatu bindattua." << std::endl;
         return false;
     }
-
     return true;
 }
 
@@ -383,6 +410,7 @@ bool Socket::CheckStatus(const int timeLimit_msec, const SocketStatus status)
     return false;
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 addrinfo Socket::CreateHints() const
 {

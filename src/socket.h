@@ -8,22 +8,29 @@
 
 class EndPoint;
 
+/// Oletus porttikoko ja porttinumero.
 constexpr int DEFAULT_BUFLEN = 1028;
 constexpr const char* DEFAULT_PORT = "25000";
 
 /// Socketti perheeet.
-enum class SocketFamily  : int {SOCKET_AF_INET = AF_INET};
+enum class SocketFamily : int {SOCKET_AF_INET = AF_INET};
+
 /// Socketti tyypit.
-enum class SocketType    : int {SOCKET_SOCKET_STREAM = SOCK_STREAM,
-                                SOCKET_SOCK_DGRAM = SOCK_DGRAM};
+enum class SocketType : int {SOCKET_STREAM = SOCK_STREAM,
+                             SOCKET_DGRAM = SOCK_DGRAM};
+
 /// Socketti protokollat.
-enum class SocketProtocol: int {SOCKET_IPPROTO_TCP = IPPROTO_TCP,
-                                SOCKET_IPPROTO_UDF = IPPROTO_UDP};
+enum class SocketProtocol: int {SOCKET_TCP = IPPROTO_TCP,
+                                SOCKET_UDF = IPPROTO_UDP};
+
 /// Luettelo sockettiin liittyvist‰ tiloista.
 enum class SocketStatus {READ,WRITE /*, ERROR = 2*/};
 
 /*
- * Yksinkertainen socket luokka.
+ * A simple socket class.
+ * Author Janne Kauppinen 2016.
+ * None right reserved.
+ * The implemention of this class is not safe. Do not use in real programs.
  */
 class Socket
 {
@@ -33,7 +40,14 @@ class Socket
         /// Destruktori.
         virtual ~Socket();
 
-        /// Luo yhteyden is‰nt‰‰n. Aiheuttaa poikkeuksen, jos ep‰onnistuu.
+        /// Pakollinen?
+        Socket(const SOCKET socket): mSocket(socket) { }
+
+        /// Move-assigment operaattori. Ts. vanha Socket-olio korvataan other Socket-oliolla.
+        /// Onko pakollinen?
+        //Socket& operator=(Socket&& other);
+
+        /// Luo yhteyden is‰nt‰‰n. Aiheuttaa runtime_error:in, jos ep‰onnistuu.
         void Connect(const std::string& address, const std::string& port);
 
         /// Sulkee socketin ja vapauttaa socketin k‰ytt‰m‰t resurssit. Aiheuttaa runtime_error:in, jos
@@ -55,6 +69,11 @@ class Socket
         /// Palauttaa true jos onnistuu ja false jos ep‰onnistuu. Ep‰onnistuessaan Bind()
         /// sulkee socketin automaattisesti.
         bool Bind();
+
+        /// Hyv‰ksyy yhteyden. Jos kaikki sujuu hyvin, funktio palauttaa true ja asettaa socket:lle uuden socketin
+        /// jonka kanssa voidaan "keskustella". Jos tapahtuuu virhe, niin funktio palauttaa false ja socket:lle ei tehd‰ mit‰‰n.
+        /// Sulkee socketin ep‰onnistuessaan.
+        Socket Accept();
 
         /// Asettaa socketin non-blocking tilaan jos status == true tai blocking tilaan jo status == false.
         bool SetNonBlockingStatus(bool status);
@@ -92,6 +111,11 @@ class Socket
         /// Jos taas satus = SocketStatus::WRITE niin funktio palauttaa true jos socket on valmis l‰hett‰m‰‰n dataa. Muutoin palauttaa false.
         /// @timeLimitMilliSec_msec on aika millisekunteina, joka function odottaa saadakseen vastauksen.
         bool CheckStatus(const int timeLimitMilliSec, const SocketStatus status);
+
+        /// Varsinainen datan vastaanottofunktio. T‰h‰n ohjautuu sek‰ Receive ett‰ ReceiveFrom funktiot.
+        /// @data on merkkijono viitteen‰ johon tallentuu vastaanotettu data. @addr on pointteri sockaddr_in structiin.
+        /// Addr:iin asetetaan l‰hett‰v‰n osapuolen yhteystiedot.
+        int RecvFunction(std::string& data, std::unique_ptr<sockaddr_in>& addr);
 };
 
 #endif // SOCKET_H

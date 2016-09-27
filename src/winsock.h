@@ -10,15 +10,15 @@ class WinSock
 {
     public:
         /// Luo singleton WinSock-olion. Epäonnistuessaan heittää poikkeuksen.
-        WinSock& create();
-        /// Destructori. Vapauttaa käyttöjärjestelmältä varatut resurssit.
-        virtual ~WinSock();
+        static WinSock& Create();
 
     protected:
 
     private:
         /// Rakennin. Heittää poikkeuksen epäonnistuessaan.
         WinSock();
+        /// Destructori. Vapauttaa käyttöjärjestelmältä varatut resurssit.
+        virtual ~WinSock();
 };
 
 #endif // WINSOCK_H

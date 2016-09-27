@@ -45,7 +45,7 @@ WinSock::~WinSock()
     WSACleanup();
 }
 
-WinSock& WinSock::create()
+WinSock& WinSock::Create()
 {
     static WinSock ws;
     return ws;
