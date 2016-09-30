@@ -67,9 +67,7 @@ const char* EndPoint::GetIpAddress(const int family)
     const char* result = InetNtop(family, &epData_.sin_addr, buffer, sizeof(buffer));
     if (result == NULL)
     {
-        std::cout << "Virhe EndPoint::GetIpAddress()." << std::endl;
-        throw std::runtime_error("EndPoint.GetIpAdress(): " + SocketError::getError(WSAGetLastError()));
-        // return "";
+        throw std::runtime_error("EndPoint::GetIpAdress(): " + SocketError::getError(WSAGetLastError()));
     }
     return result;
 }

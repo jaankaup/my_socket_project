@@ -47,11 +47,15 @@
 		<Unit filename="src/main.cpp">
 			<Option target="Debug" />
 		</Unit>
+		<Unit filename="src/misc.cpp" />
+		<Unit filename="src/misc.h" />
 		<Unit filename="src/socket.cpp" />
 		<Unit filename="src/socket.h" />
 		<Unit filename="src/socketHeaders.h">
 			<Option target="Debug" />
 		</Unit>
+		<Unit filename="src/socketexception.cpp" />
+		<Unit filename="src/socketexception.h" />
 		<Unit filename="src/winsock.cpp" />
 		<Unit filename="src/winsock.h" />
 		<Extensions>

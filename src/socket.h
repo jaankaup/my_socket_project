@@ -1,16 +1,28 @@
 #ifndef SOCKET_H
 #define SOCKET_H
 
+#include <stdexcept>
+#include <functional>
+#include <chrono>
+#include <thread>
 #include <string>
 #include <memory>
+#include <assert.h>
 #include "socketHeaders.h"
+#include "socket.h"
+#include "error.h"
+#include "winsock.h"
 #include "endpoint.h"
+
+// Otetaan pois, kun ei en‰‰ debugata.
+#define NDEBUG
 
 class EndPoint;
 
 /// Oletus porttikoko ja porttinumero.
-constexpr int DEFAULT_BUFLEN = 1028;
-constexpr const char* DEFAULT_PORT = "25000";
+constexpr unsigned int DEFAULT_BUFLEN = 1028;
+constexpr int DEFAULT_PORT = 25000;
+constexpr int DEFAULT_RECEIVE_TIMEOUT = 200;
 
 /// Socketti perheeet.
 enum class SocketFamily : int {SOCKET_AF_INET = AF_INET};
@@ -30,7 +42,7 @@ enum class SocketStatus {READ,WRITE /*, ERROR = 2*/};
  * A simple socket class.
  * Author Janne Kauppinen 2016.
  * None right reserved.
- * The implemention of this class is not safe. Do not use in real programs.
+ * The implementation of this class is incomplete. This project is just an exercise. Do not use in real programs.
  */
 class Socket
 {
@@ -43,18 +55,25 @@ class Socket
         /// Pakollinen?
         Socket(const SOCKET socket): mSocket(socket) { }
 
+        int GetReceiveTimeout() const;
+
+        void SetReceiveTimeout(const int mm);
+
+        unsigned int GetReceiveBufferSize() const;
+        void SetReceiveBufferSize(const unsigned int recSize);
+
         /// Move-assigment operaattori. Ts. vanha Socket-olio korvataan other Socket-oliolla.
         /// Onko pakollinen?
         //Socket& operator=(Socket&& other);
 
         /// Luo yhteyden is‰nt‰‰n. Aiheuttaa runtime_error:in, jos ep‰onnistuu.
-        void Connect(const std::string& address, const std::string& port);
+        void Connect(const std::string& address, const int port);
 
         /// Sulkee socketin ja vapauttaa socketin k‰ytt‰m‰t resurssit. Aiheuttaa runtime_error:in, jos
         /// sulkeminen ep‰onnistuu.
         void Close();
 
-        /// Ottaa vastaan dataa socket:n kautta. @int on vastaanotettujen tavujen m‰‰r‰. @data on
+        /// Ottaa vastaan dataa socket:n kautta. Functio palauttaa vastaanotettujen tavujen m‰‰r‰n. @data on
         /// merkkijono johon asetetaan saapuva data.
         int Receive(std::string& data);
 
@@ -70,9 +89,8 @@ class Socket
         /// sulkee socketin automaattisesti.
         bool Bind();
 
-        /// Hyv‰ksyy yhteyden. Jos kaikki sujuu hyvin, funktio palauttaa true ja asettaa socket:lle uuden socketin
-        /// jonka kanssa voidaan "keskustella". Jos tapahtuuu virhe, niin funktio palauttaa false ja socket:lle ei tehd‰ mit‰‰n.
-        /// Sulkee socketin ep‰onnistuessaan.
+        /// Hyv‰ksyy yhteyden. Jos kaikki sujuu hyvin, funktio palauttaa uuden socketin
+        /// jonka kanssa voidaan "keskustella". Jos tapahtuuu virhe, niin funktio heitt‰‰ runtime_errorin.
         Socket Accept();
 
         /// Asettaa socketin non-blocking tilaan jos status == true tai blocking tilaan jo status == false.
@@ -86,6 +104,18 @@ class Socket
 
         /// Socketin endpoint.
         EndPoint mEndpoint;
+
+        /// Socketin portinnumero.
+        int mPortNumber;
+
+        /// Socketin l‰hetyspuskurin koko.
+        int mSendBufferLength;
+
+        /// Socketin vastaanottopuskurin koko.
+        int mReceiveBufferLength;
+
+        /// Aika, joka odotetaan ennen kuin aikakatkaistaan Receive ja ReceiveFrom j‰senfunktiot.
+        int mReceiveTimeout;
 
         /// Rakenne, jossa s‰ilytet‰‰n socketin tyyppitiedot.
         struct SocketInfo
@@ -115,7 +145,7 @@ class Socket
         /// Varsinainen datan vastaanottofunktio. T‰h‰n ohjautuu sek‰ Receive ett‰ ReceiveFrom funktiot.
         /// @data on merkkijono viitteen‰ johon tallentuu vastaanotettu data. @addr on pointteri sockaddr_in structiin.
         /// Addr:iin asetetaan l‰hett‰v‰n osapuolen yhteystiedot.
-        int RecvFunction(std::string& data, std::unique_ptr<sockaddr_in>& addr);
+        //int RecvFunction(std::string& data, std::unique_ptr<sockaddr_in>& addr);
 };
 
 #endif // SOCKET_H
