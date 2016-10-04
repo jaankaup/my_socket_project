@@ -4,10 +4,11 @@
 
 Socket::Socket(const SocketFamily sf, const SocketType st, const SocketProtocol sp)
 {
-    // Alustetaan WinSock. WinSock on singleton, joten ylimääräiset WinSock alustukset eivät haittaa.
+    // Initializes the WinSock object if it's necessary. WinSock is an singleton object, so it's safe to
+    // call WinSocks Create member function more than once.
     WinSock::Create();
 
-    // Asetetaan socketin parametrit.
+    // Initializes the socket parameters.
     mSocketInfo.socketFamily = sf;
     mSocketInfo.socketType = st;
     mSocketInfo.socketProtocol = sp;
@@ -15,9 +16,9 @@ Socket::Socket(const SocketFamily sf, const SocketType st, const SocketProtocol 
     mReceiveBufferLength = DEFAULT_BUFLEN;
     mReceiveTimeout = DEFAULT_RECEIVE_TIMEOUT;
 
-    // Luodaan varsinainen socket.
+    // Here we create the actual socket.
     CreateSocket();
-    // Asetetaan oletusarvoisesti socket blocking tilaan.
+    // By default, the socket is in Blocking state.
     SetNonBlockingStatus(false);
 }
 
@@ -25,7 +26,7 @@ Socket::Socket(const SocketFamily sf, const SocketType st, const SocketProtocol 
 
 Socket::~Socket()
 {
-
+    // TODO: clean up socket if there is something to clean up.
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -47,6 +48,13 @@ void Socket::SetReceiveTimeout(const int mm)
 unsigned int Socket::GetReceiveBufferSize() const
 {
     return mReceiveBufferLength;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool Socket::IsBlocking() const
+{
+    return mIsBlocking;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -76,59 +84,47 @@ Socket& Socket::operator=(Socket&& other)
 
 void Socket::Connect(const std::string& address, const int port)
 {
-    /*
-     * Luodaan addrinfoja. Privaatti attribuutti hints_ on vihje siitä millainen yhteys halutaan muodostaa.
-     * Result on linkitetty lista addrinfoja, joiden sisältö saadaan myöhemmin getaddrinfo funktiosta serveriltä.
-     * Linkitetystä listasta etsitään sellainen addrinfo jolla saadaan muodostettua yhteys.
-     * Ptr on pointeri jolla käydään läpi resultia kunnes/jos löytyy sopiva addrinfo jolla yhteydenmuodostus onnistuu.
-     */
-     // TODO: jos jää aikaan, niin yritä saada toimimaan smartpointer, niin ei tarvitse huolehtia resurssien
-     // vapauttamisesta jos tulee poikkeus.
+     // TODO: create a smart pointer.
      //std::unique_ptr<addrinfo,std::function<void(addrinfo*)>>
      //       pResult(nullptr,[](addrinfo* ar) {freeaddrinfo(ar);});
 
+     // A pointer to addrinfo object(s) (information about all available connections).
      addrinfo* result = nullptr;
+     // A pointer to iterate over all results. (see to loop below).
      addrinfo* ptr = nullptr;
 
-     // Luodaan oma addrinfo, jolla filteroidaan halutunlaisia yhteyksiä.
+     // Here we create a hint which indicates which kind of connection is desired.
      addrinfo hints = CreateHints();
 
-     // Muutetaan portin numero c-merkkijonoksi.
+     // We must convert the port to c-string because getaddrinfo function demands it.
      std::string s = std::to_string(port);
      char const *portCString = s.c_str();
 
-    /*
-     * Selvitetään toisen osapuolen osoite ym. yhteydenottoon tarvittavaa tietoa.
-     * Hints on siis vihje siitä millainen yhteys halutaan. Serveriltä
-     * saadaan tietoja yhteyksistä joita se tarjoaa ja jotka vastaavat hints:iä.
-     * Nämä tiedot menevät linkitettynä listana resulttiin.
-    */
+    // In this call we get information about the host and which kind of connection is available.
+    // The result is a chain of addrinfos in a linked list. Hints filters away wrong kind of connections.
     int status = getaddrinfo(address.c_str(), portCString, &hints, &result);
 
-    /* Jotain meni mönkään. */
+    /* Something went wrong. */
     if (status != 0)
     {
-        // Vapautetaan resurssit, sillä seuraavaksi heitetään poikkeus.
+        // Lets free result before an exception is thrown.
         freeaddrinfo(result);
         throw std::runtime_error("Socket::Connect : " + SocketError::getError(WSAGetLastError()));
     }
 
-    // Flagi, joka kertoo sen onko yhteys muodostettu.
+    // Flag that indicates if we succeed to create an connection.
     bool connected = false;
 
-    /* Etsitään toisen yhteysosapuolelta saatujen addrinfo:jen joukosta sellaista joka vastaisi hints:a.
-     * Hyväskytään heti ensimmäinen vastaantuleva yhteys.
+    /*
+     * Here we try to create a connection in a loop. Remember: the result is an linked list of connection, and
+     * we have to try until we make an connection or until the all elements of result are iterated.
      */
     for (ptr = result ; ptr != nullptr ; ptr = ptr->ai_next)
     {
-        /* Pitääkö luoda uusi socket joka kerta? */
-        //CreateSocket(); //TODO: käsittele mahdollinen runtime_error. Ts. vapauta resurssit.
-        //if (mSocket == INVALID_SOCKET) return false;
-
-        /* Yritetään ottaa yhteyttä luodulla socketilla. */
+        /* Lets try to make a connection. */
         status = connect( mSocket, ptr->ai_addr, static_cast<int>(ptr->ai_addrlen));
 
-        /* Saatiin yhteys!. */
+        /* We made it! we can stop right here. */
         if (status == 0)
         {
             connected = true;
@@ -136,13 +132,13 @@ void Socket::Connect(const std::string& address, const int port)
         }
     }
 
-    // Vapautetaan resurssit.
+    /* Always remember to free the result. */
     freeaddrinfo(result);
 
-    /* Ei saatu yhteyttä serveriin. Heitetään poikkeus.*/
+    /* No connection. An exception is thrown. */
     if (!connected)
     {
-        throw std::runtime_error("Socket::Connect : connection failed.");
+        throw SocketException("Socket::Connect : connection failed.");
     }
 }
 
@@ -153,54 +149,62 @@ int Socket::Receive(std::string& s)
     int recBytes = 0;
     char receiveBuffer[mReceiveBufferLength];
 
+    // If receiveTimeout is zero or negative, the operation is considered an infinity operation (see below).
     bool infinity = (mReceiveTimeout <= 0);
 
-    /* Result on saatujen tavujen määrä, tai SOCKET_ERROR jos tapahtuu virhe. */
+    // The result indicates the amount of bytes received or SOCKER_ERROR if something goes wrong.
     int result = 0;
     do
     {
-        /* Tsekataan voidaanko socketista lukea. Jos mReceiveTimeout > 0 niin odotetaan
-         * korkeintaan mReceiveTimeout millisekuntia kun selvitetään voiko socketista lukea. */
+        // Here we check if the socket is ready to read.
         bool ready = true;
+        // If receiveTimeout is zero or an negative number, the socket is goin to wait forever to complete its task.
+        // Otherwise the socket is going to wait for mReceiveTimeout amount of time to wait and then tell if its ready
+        // to read.
         if (!infinity) ready = CheckStatus(mReceiveTimeout, SocketStatus::READ);
         if (!ready) { return recBytes; }
 
+        // A different call for forever waiting operation and timed operation.
+        // MSG_WAITALL continues only, if (1) recBuffer is full or (2) the host has closed the connection or
+        // (3) if the request has been canceled or an error occurred.
         if (infinity) result = recv(mSocket, receiveBuffer, sizeof(receiveBuffer), MSG_WAITALL);
         else result = recv(mSocket, receiveBuffer, sizeof(receiveBuffer), 0);
 
-        // Jos puskurissa on tavaraa, niin lisätään puskurin sisältö s:ään ja
-        // lisätään luettujen tavujen lukumäärä recBytesiin.
+        // If the input buffer has something for us, we must append the result to the string buffer 's'.
         if (result > 0) {
+            // The receiveBuffer is totally full. We append everything to 's' and continue.
             if (result == sizeof(receiveBuffer))
             {
                 s.append(receiveBuffer, 0, result);
                 recBytes += result;
                 continue;
             }
-            /* Lisätään '\0' bufferiin oikeaan kohtaan jotta saadaan stringiin oikea data. Muuten saattaa tulla roskaa mukaan stringiin.
-             * Koska edellä tarkistettiin tilanne että vastaanotettu data on yhtä suuri kuin puskurin tila, niin tässä on nyt tilanne se, että
-             * tavuja on otettu puskuriin vähemmän kuin mitä puskurissa on tilaa. Tässä on nyt päätelty että enempää dataa ei tule.
-             */
+            // We add '\0' to the buffer so we know where the data ends. Then we append the data to the buffer 's'.
             receiveBuffer[result] = '\0';
             recBytes += result;
             s += receiveBuffer;
             return recBytes;
         }
+        // Nothing to read. Lets break the loop.
         else if (result == 0) { break; }
+        // An error occurred.
         else if (result == SOCKET_ERROR)
         {
+            // Lets get that error.
             int error = WSAGetLastError();
-            // WSAEWOULDBLOCK ei ole oikeastaan virhe. Jos socket on nonblockin tilassa ja juuri tällä hetkellä
-            // puskurissa ei ole mitään luettavaa, niin palautetaan nykyinen sisältö, eikä jäädä nyt lukemaan lisää.
-            // Socketin pitäisi käydä lukemassa purskuria uudestaan hieman myöhemmin, jotta kaikki mahdollinen
-            // data saataisiin luettua.
+
+            // WSAEWOULDBLOCK is not an actual error. It only tells that the socket is in non-blocking state and
+            // there's nothing more to read in the recBuffer. We can now break the loop and return the data we
+            // got so far.
             if (error == WSAEWOULDBLOCK) {
                 return recBytes;
             }
-            throw std::runtime_error("Socket.Receive: " + SocketError::getError(error));
-            //return result;
+            // There was a real error. Throw an exception.
+            else throw SocketException("Socket.Receive: " + SocketError::getError(error));
         };
+    // The condition of the loop. We stop only when the result == 0, which tells us that there is no more data to read.
     } while (result > 0);
+
     return recBytes;
 }
 
@@ -247,7 +251,7 @@ int Socket::ReceiveFrom(std::string& s, EndPoint& remote)
             if (error == WSAEWOULDBLOCK) {
                 return recBytes;
             }
-            throw std::runtime_error("Socket.ReceiveFrom: " + SocketError::getError(error));
+            throw SocketException("Socket.ReceiveFrom: " + SocketError::getError(error));
         };
     } while (result > 0);
     return recBytes;
@@ -265,7 +269,7 @@ int Socket::Send(const std::string& data)
 
     if (result == SOCKET_ERROR)
     {
-        throw std::runtime_error("Socket::Send(). " + SocketError::getError(WSAGetLastError()));
+        throw SocketException("Socket::Send(). " + SocketError::getError(WSAGetLastError()));
     }
     return result;
 }
@@ -290,7 +294,7 @@ int Socket::SendTo(const std::string& data, EndPoint& remote)
     if (result == SOCKET_ERROR)
     {
         //Close();
-        throw std::runtime_error("Socket::SendTo(). " + SocketError::getError(WSAGetLastError()));
+        SocketException("Socket::SendTo(). " + SocketError::getError(WSAGetLastError()));
     }
     return result;
 }
@@ -304,7 +308,7 @@ void Socket::Close()
     int result = closesocket(mSocket);
     if (result != 0)
     {
-        throw std::runtime_error(SocketError::getError(WSAGetLastError()));
+        SocketException(SocketError::getError(WSAGetLastError()));
     }
     mSocket = INVALID_SOCKET;
 }
@@ -316,7 +320,7 @@ Socket Socket::Accept()
     SOCKET result = accept(mSocket, nullptr, nullptr);
     if (result == INVALID_SOCKET)
     {
-        throw std::runtime_error("Socket::Accept. " + SocketError::getError(WSAGetLastError()));
+        SocketException("Socket::Accept. " + SocketError::getError(WSAGetLastError()));
     }
     Socket s(result);
     return s;
@@ -330,13 +334,13 @@ void Socket::CreateSocket()
                       static_cast<int>(mSocketInfo.socketType),
                       static_cast<int>(mSocketInfo.socketProtocol));
 
-    if (s == INVALID_SOCKET) throw std::runtime_error(SocketError::getError(WSAGetLastError()));
+    if (s == INVALID_SOCKET) SocketException(SocketError::getError(WSAGetLastError()));
     else mSocket = s;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool Socket::SetNonBlockingStatus(bool status)
+void Socket::SetNonBlockingStatus(bool status)
 {
     u_long iMode;
     iMode = status;
@@ -350,9 +354,9 @@ bool Socket::SetNonBlockingStatus(bool status)
 
     int result = ioctlsocket(mSocket, FIONBIO, &iMode);
     if (result != NO_ERROR) {
-        throw std::runtime_error("Socket::SetNonBlockingStatus : " + status);
+        throw SocketException("Socket::SetNonBlockingStatus : " + status);
     }
-    return true;
+    mIsBlocking = !status;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

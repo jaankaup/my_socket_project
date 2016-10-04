@@ -13,11 +13,13 @@
 #include "error.h"
 #include "winsock.h"
 #include "endpoint.h"
+#include "socketexception.h"
 
 // Otetaan pois, kun ei en‰‰ debugata.
 #define NDEBUG
 
 class EndPoint;
+class SocketExepction;
 
 /// Oletus porttikoko ja porttinumero.
 constexpr unsigned int DEFAULT_BUFLEN = 1028;
@@ -59,6 +61,9 @@ class Socket
 
         void SetReceiveTimeout(const int mm);
 
+        /// Gets a value that indicates whether the Socket is in blocking mode.
+        bool IsBlocking() const;
+
         unsigned int GetReceiveBufferSize() const;
         void SetReceiveBufferSize(const unsigned int recSize);
 
@@ -94,7 +99,7 @@ class Socket
         Socket Accept();
 
         /// Asettaa socketin non-blocking tilaan jos status == true tai blocking tilaan jo status == false.
-        bool SetNonBlockingStatus(bool status);
+        void SetNonBlockingStatus(bool status);
 
     protected:
 
@@ -116,6 +121,8 @@ class Socket
 
         /// Aika, joka odotetaan ennen kuin aikakatkaistaan Receive ja ReceiveFrom j‰senfunktiot.
         int mReceiveTimeout;
+
+        bool mIsBlocking;
 
         /// Rakenne, jossa s‰ilytet‰‰n socketin tyyppitiedot.
         struct SocketInfo
@@ -142,10 +149,6 @@ class Socket
         /// @timeLimitMilliSec_msec on aika millisekunteina, joka function odottaa saadakseen vastauksen.
         bool CheckStatus(const int timeLimitMilliSec, const SocketStatus status);
 
-        /// Varsinainen datan vastaanottofunktio. T‰h‰n ohjautuu sek‰ Receive ett‰ ReceiveFrom funktiot.
-        /// @data on merkkijono viitteen‰ johon tallentuu vastaanotettu data. @addr on pointteri sockaddr_in structiin.
-        /// Addr:iin asetetaan l‰hett‰v‰n osapuolen yhteystiedot.
-        //int RecvFunction(std::string& data, std::unique_ptr<sockaddr_in>& addr);
 };
 
 #endif // SOCKET_H

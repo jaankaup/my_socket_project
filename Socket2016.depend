@@ -1,13 +1,8 @@
 # depslib dependency file v1.0
-1475161054 source:d:\socket2016\src\socket.cpp
-	<stdexcept>
-	<functional>
-	<chrono>
-	<thread>
+1475489248 source:d:\socket2016\src\socket.cpp
 	"socket.h"
-	"error.h"
 
-1475247141 d:\socket2016\src\socket.h
+1475483109 d:\socket2016\src\socket.h
 	<stdexcept>
 	<functional>
 	<chrono>
@@ -20,6 +15,7 @@
 	"error.h"
 	"winsock.h"
 	"endpoint.h"
+	"socketexception.h"
 
 1474963743 d:\socket2016\src\socketheaders.h
 	<windows.h>
@@ -27,11 +23,12 @@
 	<Ws2tcpip.h>
 	<iphlpapi.h>
 
-1475247038 source:d:\socket2016\src\main.cpp
+1475501165 source:d:\socket2016\src\main.cpp
 	<iostream>
 	"socket.h"
 	"winsock.h"
 	"misc.h"
+	<sstream>
 
 1474984828 source:d:\socket2016\src\winsock.cpp
 	<stdexcept>
@@ -59,7 +56,7 @@
 1474984202 source:d:\socket2016\src\socketexception.cpp
 	"socketexception.h"
 
-1474984186 d:\socket2016\src\socketexception.h
+1475493183 d:\socket2016\src\socketexception.h
 	<stdexcept>
 
 1475246806 source:d:\socket2016\src\misc.cpp
@@ -68,4 +65,13 @@
 1475246732 d:\socket2016\src\misc.h
 	<iostream>
 	"socketHeaders.h"
+
+1475505711 source:d:\socket2016\src\endpoint2.cpp
+	"endpoint2.h"
+
+1475505978 d:\socket2016\src\endpoint2.h
+	<limits>
+	"socketHeaders.h"
+	"socketexception.h"
+	"error.h"
 
