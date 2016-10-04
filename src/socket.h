@@ -7,6 +7,7 @@
 #include <thread>
 #include <string>
 #include <memory>
+#include <iostream>
 #include <assert.h>
 #include "socketHeaders.h"
 #include "socket.h"

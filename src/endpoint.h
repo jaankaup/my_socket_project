@@ -1,43 +1,69 @@
-#ifndef ENDPOINT_H
-#define ENDPOINT_H
-#include <iostream>
+#ifndef EndPoint_H
+#define EndPoint_H
+
+#include <limits>
 #include "socketHeaders.h"
+#include "socketexception.h"
+#include "error.h"
 
-constexpr int IPs[2] = {INADDR_LOOPBACK, INADDR_ANY};
-/// LOOP_BACK -> 127.0.0.1 ANY -> 0.0.0.0
-enum class IPAddress { LOOP_BACK = 0, ANY = 1};
+enum class Interfaces : int {LOOPBACK, ANY};
+enum class IPversion  {IPV4,IPV6};
 
-
+/*
+ * EndPoint class. IPV6 is not implemented yet!
+ * Copyright Janne Kauppinen 2016.
+ * None rights reserved.
+ */
 class EndPoint
 {
     public:
+
+        /// Constructor.
         EndPoint();
-        ~EndPoint();
 
-        EndPoint& operator=(const EndPoint& other);
+        /// Destructor.
+        virtual ~EndPoint();
 
+        /// Equal to operator.
         bool operator==(const EndPoint& other);
 
-        /* Toimii nyt mahdollisesti vaarallinen pitemm‰ll‰ t‰ht‰imell‰ katsottuna. Pit‰isi ehk‰ k‰ytt‰‰
-         * smart-pointereita. Palauttaa pointerin epData_:an.
-         */
-        sockaddr_in* operator()();
+        /// Set an IP-address. Throws an EndPointException on failure.
+        void SetIpAddress(const std::string& address);
 
-        /* Vain ip4. */
-        const char* GetIpAddress(const int family = AF_INET);
-        /* Vain ip4. */
-        u_short GetPortNumber();
+        /// Sets an interface. Throws an EndPointException on failure.
+        void SetInterface(const Interfaces v);
 
-        void SetIpAddress(int family, const std::string& ipAddress);
-        void SetIpAddress(int family, const IPAddress ip);
-        void SetPortNumber(const u_short pNumber);
+        /// Returns the IP-address. Throws an EndPointException on failure
+        std::string GetIpAddress() const;
+
+        /// Set an IP-version. Throws an EndPointException on failure.
+        void SetIPFamily(const IPversion version);
+
+        /// Returns the IP-family.
+        IPversion GetIPFamily() const;
+
+        /// Set a port number. Throws an EndPointException on failure
+        void SetPortNumber(const int port);
+
+        /// Returns the port number. Throws an EndPointException on failure
+        int GetPortNumber() const;
+
+        /// Creates an addrinfo object. NOT IMPLEMENTED.
+        addrinfo CreateAddrinfo() const;
+
+        /// Creates an sockaddr object from this EndPoint. NOT IMPLEMENTED.
+        sockaddr ConvertToSockaddr() const;
 
     private:
-        sockaddr_in epData_;
 
+        /// IP-adress and port number for IPV4.
+        sockaddr_in mEndPointData;
 
-        void ResetEndPoint();
+        /// The current version of IP-address.
+        IPversion mCurrentVersion = IPversion::IPV4;
+
+        /// Creates a new sockaddr_in object with @ipVersion parameter.
+        sockaddr_in CreateSockaddrin() const;
 };
 
-#endif // ENDPOINT_H
-
+#endif // EndPoint_H

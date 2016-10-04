@@ -218,6 +218,9 @@ int Socket::ReceiveFrom(std::string& s, EndPoint& remote)
 
     /* Result on saatujen tavujen m‰‰r‰, tai SOCKET_ERROR jos tapahtuu virhe. */
     int result = 0;
+
+    sockaddr tempSockaddr = mEndpoint.ConvertToSockaddr();
+
     do
     {
         /* Tsekataan voidaanko socketista lukea. Odotetaan korkeintaan mReceiveTimeout millisekuntia. */
@@ -228,7 +231,7 @@ int Socket::ReceiveFrom(std::string& s, EndPoint& remote)
                           receiveBuffer,
                           sizeof(receiveBuffer),
                           0,
-                          reinterpret_cast<sockaddr*>(remote()),
+                          &tempSockaddr,//reinterpret_cast<sockaddr*>(remote()),
                           &addr_len);
 
         if (result > 0) {
@@ -281,6 +284,8 @@ int Socket::SendTo(const std::string& data, EndPoint& remote)
     const char* dataCString = data.c_str();
     bool ready = CheckStatus(10, SocketStatus::WRITE);
 
+    sockaddr tempSockaddr = mEndpoint.ConvertToSockaddr();
+
     // TODO: heit‰ poikkeus?
     if (!ready) { std::cout << "EI VOI KIRJOITTAA" << std::endl; return 0; }
 
@@ -288,7 +293,7 @@ int Socket::SendTo(const std::string& data, EndPoint& remote)
                         dataCString,
                         static_cast<int>(strlen(dataCString)),
                         0,
-                        reinterpret_cast<sockaddr*>(remote()),
+                        &tempSockaddr,
                         sizeof(struct sockaddr_in));
 
     if (result == SOCKET_ERROR)
@@ -391,7 +396,7 @@ bool Socket::Bind()
     hints.ai_flags = AI_PASSIVE;
 
     /* Muutetaan ip:t sellaiseen muotoon ett‰ getaddrinfo ymm‰rt‰‰. */
-    const char* ip = mEndpoint.GetIpAddress();
+    const char* ip = mEndpoint.GetIpAddress().c_str();
     if (strcmp(ip, "0.0.0.0") == 0) ip = NULL;
     else if (strcmp(ip, "127.0.0.1") == 0) ip = "localhost";
 
