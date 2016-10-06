@@ -9,36 +9,40 @@
 #include <memory>
 #include <iostream>
 #include <assert.h>
+#include <vector>
 #include "socketHeaders.h"
 #include "socket.h"
 #include "error.h"
 #include "winsock.h"
 #include "endpoint.h"
 #include "socketexception.h"
+#include "misc.h"
 
-// Otetaan pois, kun ei en‰‰ debugata.
+// Comment this to disable debugging.
 #define NDEBUG
 
+// Forward declarations.
 class EndPoint;
 class SocketExepction;
 
-/// Oletus porttikoko ja porttinumero.
+/// The default buffer length, port and receive/send time out.
 constexpr unsigned int DEFAULT_BUFLEN = 1028;
 constexpr int DEFAULT_PORT = 25000;
-constexpr int DEFAULT_RECEIVE_TIMEOUT = 200;
+constexpr int DEFAULT_RECEIVE_TIMEOUT = 0;
+constexpr int DEFAULT_SEND_TIMEOUT = 0;
 
-/// Socketti perheeet.
+/// Socket families. Now only AF_INET is provided.
 enum class SocketFamily : int {SOCKET_AF_INET = AF_INET};
 
-/// Socketti tyypit.
+/// Socket types. Only these 2 are provided.
 enum class SocketType : int {SOCKET_STREAM = SOCK_STREAM,
                              SOCKET_DGRAM = SOCK_DGRAM};
 
-/// Socketti protokollat.
+/// Socket protocols. Only TCP and UDP are available.
 enum class SocketProtocol: int {SOCKET_TCP = IPPROTO_TCP,
                                 SOCKET_UDF = IPPROTO_UDP};
 
-/// Luettelo sockettiin liittyvist‰ tiloista.
+/// An enumeration for socket status. This should be private.
 enum class SocketStatus {READ,WRITE /*, ERROR = 2*/};
 
 /*
@@ -50,17 +54,23 @@ enum class SocketStatus {READ,WRITE /*, ERROR = 2*/};
 class Socket
 {
     public:
-        /// Rakentaja. Aiheuttaa runtime_error:in, jos socketin luonti ep‰onnistuu.
+        /// Constructor. Throws SocketException on failure.
         Socket(const SocketFamily sf, const SocketType st, const SocketProtocol sp);
-        /// Destruktori.
+
+        /// Destructor.
         virtual ~Socket();
 
-        /// Pakollinen?
-        Socket(const SOCKET socket): mSocket(socket) { }
-
+        /// Set timout for Receive function.
         int GetReceiveTimeout() const;
 
+        /// Set timout for Receive function.
         void SetReceiveTimeout(const int mm);
+
+        /// Set timout for Receive function.
+        int GetSendTimeout() const;
+
+        /// Set timout for Receive function.
+        void SetSendTimeout(const int mm);
 
         /// Gets a value that indicates whether the Socket is in blocking mode.
         bool IsBlocking() const;
@@ -68,16 +78,16 @@ class Socket
         unsigned int GetReceiveBufferSize() const;
         void SetReceiveBufferSize(const unsigned int recSize);
 
-        /// Move-assigment operaattori. Ts. vanha Socket-olio korvataan other Socket-oliolla.
-        /// Onko pakollinen?
-        //Socket& operator=(Socket&& other);
-
         /// Luo yhteyden is‰nt‰‰n. Aiheuttaa runtime_error:in, jos ep‰onnistuu.
         void Connect(const std::string& address, const int port);
 
         /// Sulkee socketin ja vapauttaa socketin k‰ytt‰m‰t resurssit. Aiheuttaa runtime_error:in, jos
         /// sulkeminen ep‰onnistuu.
         void Close();
+
+        /// Places a Socket in a listening state. @backlog is the maximum length of the pending connections queue.
+        /// Throws an SocketException if this socket is closed or in not bound.
+        void Listen(const int backlog);
 
         /// Ottaa vastaan dataa socket:n kautta. Functio palauttaa vastaanotettujen tavujen m‰‰r‰n. @data on
         /// merkkijono johon asetetaan saapuva data.
@@ -89,43 +99,63 @@ class Socket
 
         int SendTo(const std::string& data, EndPoint& remote);
 
-        /// Bindataan socket ennalta m‰‰r‰ttyyn porttiin. T‰m‰n j‰lkeen voi alkaa kuunnella ko. porttia
-        /// Listen() j‰senfunktiolla.
-        /// Palauttaa true jos onnistuu ja false jos ep‰onnistuu. Ep‰onnistuessaan Bind()
-        /// sulkee socketin automaattisesti.
-        bool Bind();
+        /// Bind function. Throws SocketException on failure.
+        void Bind(const EndPoint& ep);
 
-        /// Hyv‰ksyy yhteyden. Jos kaikki sujuu hyvin, funktio palauttaa uuden socketin
-        /// jonka kanssa voidaan "keskustella". Jos tapahtuuu virhe, niin funktio heitt‰‰ runtime_errorin.
-        Socket Accept();
+        /// Accept funktion. To call this function, socket must be successfully bound.
+        /// If Accept succeeds, an pointer to a socket is returned for for a newly created connection.
+        /// Otherwise an SocketExcpetion is thrown.
+        std::unique_ptr<Socket> Accept();
 
-        /// Asettaa socketin non-blocking tilaan jos status == true tai blocking tilaan jo status == false.
+        /// Set the blocking status for the socket..
         void SetNonBlockingStatus(bool status);
+
+        /// Return the local end point. Throw SocketException if the socket is not bound.
+        EndPoint GetLocalEndPoint() const;
+
+        /// Return the remote end point. Throw SocketException if the socket is closed or not connected (see. Accpet, Connect).
+        EndPoint GetRemoteEndPoint() const;
+
+        /// Gets the amount of data that has been received from the network and is available to be read.
+        int Available();
 
     protected:
 
     private:
-        /// Varsinainen socket.
+        /// The actual socket.
         SOCKET mSocket = INVALID_SOCKET;
 
-        /// Socketin endpoint.
-        EndPoint mEndpoint;
+        /// Local end point.
+        EndPoint mLocalEndPoint;
 
-        /// Socketin portinnumero.
-        int mPortNumber;
+        /// Remote end point.
+        EndPoint mRemoteEndPoint;
 
-        /// Socketin l‰hetyspuskurin koko.
+        /// A value that indicates whenever socket is binded.
+        bool mIsBound = false;
+
+        /// A value that indicates the connection status of the socket.
+        bool mConnected = false;
+
+        /// The maximum length of the pending listening queue.
+        int mBacklog = 0;
+
+        /// The size of the send buffer.
         int mSendBufferLength;
 
-        /// Socketin vastaanottopuskurin koko.
+        /// The size of the receive buffer.
         int mReceiveBufferLength;
 
-        /// Aika, joka odotetaan ennen kuin aikakatkaistaan Receive ja ReceiveFrom j‰senfunktiot.
+        /// A value that indicates the time to wait until break the Receive-function.
         int mReceiveTimeout;
 
+        /// A value that indicates the time to wait until break the Send-function.
+        int mSendTimeout;
+
+        /// A value which indicates the blocking status of the socket.
         bool mIsBlocking;
 
-        /// Rakenne, jossa s‰ilytet‰‰n socketin tyyppitiedot.
+        /// A struct for basic information of the socket.
         struct SocketInfo
         {
             SocketFamily socketFamily;
@@ -133,11 +163,10 @@ class Socket
             SocketProtocol socketProtocol;
         } mSocketInfo;
 
-        /// Luo addrinfon ainoastaan mSocketInfosta. Tarvitaan silloin, kun filteroidaan t‰m‰n socketin
-        /// kaltaisia yhteyksi‰. Vrt. Bind() ja Connect().
+        /// Creates a addrinfo from mSocketInfo.
         addrinfo CreateHints() const;
 
-        /// Luo uuden mSocketin.
+        /// Creates the private member mSocket.
         void CreateSocket();
 
         /// Palauttaa socketin input-queue:ssa olevien tavujen lukum‰‰r‰n eli tavujen m‰‰r‰n mit‰ sill‰ hetkell‰

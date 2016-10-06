@@ -42,8 +42,6 @@
 		</Linker>
 		<Unit filename="src/endpoint.cpp" />
 		<Unit filename="src/endpoint.h" />
-		<Unit filename="src/endpoint2.cpp" />
-		<Unit filename="src/endpoint2.h" />
 		<Unit filename="src/error.cpp" />
 		<Unit filename="src/error.h" />
 		<Unit filename="src/main.cpp">

@@ -16,10 +16,16 @@ enum class IPversion  {IPV4,IPV6};
  */
 class EndPoint
 {
+    /// We need to give Socket class access to the private members.
+    friend class Socket;
+
     public:
 
         /// Constructor.
         EndPoint();
+
+        /// Constructor.
+        EndPoint(const std::string& address, int port);
 
         /// Destructor.
         virtual ~EndPoint();

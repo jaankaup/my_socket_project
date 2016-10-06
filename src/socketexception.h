@@ -2,6 +2,7 @@
 #define SOCKETEXCEPTION_H
 
 #include <stdexcept>
+#include <string>
 
 /*
  * An exception class for Sockets.
