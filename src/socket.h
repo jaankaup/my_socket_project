@@ -40,10 +40,10 @@ enum class SocketType : int {SOCKET_STREAM = SOCK_STREAM,
 
 /// Socket protocols. Only TCP and UDP are available.
 enum class SocketProtocol: int {SOCKET_TCP = IPPROTO_TCP,
-                                SOCKET_UDF = IPPROTO_UDP};
+                                SOCKET_UDP = IPPROTO_UDP};
 
 /// An enumeration for socket status. This should be private.
-enum class SocketStatus {READ,WRITE /*, ERROR = 2*/};
+enum class SocketStatus: int {READ,WRITE,SOCKERR};
 
 /*
  * A simple socket class.
@@ -76,27 +76,29 @@ class Socket
         bool IsBlocking() const;
 
         unsigned int GetReceiveBufferSize() const;
+
         void SetReceiveBufferSize(const unsigned int recSize);
 
-        /// Luo yhteyden is‰nt‰‰n. Aiheuttaa runtime_error:in, jos ep‰onnistuu.
+        /// Connection function. Throws an SocketException on failure.
         void Connect(const std::string& address, const int port);
 
-        /// Sulkee socketin ja vapauttaa socketin k‰ytt‰m‰t resurssit. Aiheuttaa runtime_error:in, jos
-        /// sulkeminen ep‰onnistuu.
+        /// Closes the socket. Throws an SocketException on failure.
         void Close();
 
         /// Places a Socket in a listening state. @backlog is the maximum length of the pending connections queue.
         /// Throws an SocketException if this socket is closed or in not bound.
         void Listen(const int backlog);
 
-        /// Ottaa vastaan dataa socket:n kautta. Functio palauttaa vastaanotettujen tavujen m‰‰r‰n. @data on
-        /// merkkijono johon asetetaan saapuva data.
-        int Receive(std::string& data);
+        /// Function for receiving data. Return received data in bytes. Throws SocketException on failure.
+        int Receive(std::string& buffer);
 
-        int ReceiveFrom(std::string& s, EndPoint& remote);
+        /// Function for receiving data from @remote endpoint. Throws SocketException on failure. Return received data in bytes.
+        int ReceiveFrom(std::string& buffer, EndPoint& remote);
 
+        /// Send function. Throws SocketException on failure. Returns amount of data sent.
         int Send(const std::string& data);
 
+        /// Function for sending data to @remote endpoint. Throws SocketException on failure. Returns amount of data sent.
         int SendTo(const std::string& data, EndPoint& remote);
 
         /// Bind function. Throws SocketException on failure.
@@ -117,9 +119,11 @@ class Socket
         EndPoint GetRemoteEndPoint() const;
 
         /// Gets the amount of data that has been received from the network and is available to be read.
+        /// This is an alias for CheckStatus(0,SocketStatus::READ).
         int Available();
 
-    protected:
+        /// Check socket status. @timeLimitMilliSec is the maximum time to wait to check the status.
+        bool CheckStatus(const int timeLimitMilliSec, const SocketStatus status);
 
     private:
         /// The actual socket.
@@ -169,16 +173,11 @@ class Socket
         /// Creates the private member mSocket.
         void CreateSocket();
 
-        /// Palauttaa socketin input-queue:ssa olevien tavujen lukum‰‰r‰n eli tavujen m‰‰r‰n mit‰ sill‰ hetkell‰
-        /// voidaan lukea. @mm_seconds on maksimi aika millisekunneissa jonka t‰m‰ j‰senfunktio saa aikaa suoritukseen.
-        /// N‰in v‰ltet‰‰n loputon odottelu jos tavuja ei tulekaan luettavaksi ollenkaan.
+        /// Returns available bytes to read. Wait max to @mm_seconds.
         int GetAvailableBytes(const unsigned int mm_seconds);
 
-        /// Tarkistaa socketin tilan. Jos status = SocketStatus::READ niin funktio palauttaa true jos socket on valmis ottamaan dataa vastaan. Muutoni palauttaa false.
-        /// Jos taas satus = SocketStatus::WRITE niin funktio palauttaa true jos socket on valmis l‰hett‰m‰‰n dataa. Muutoin palauttaa false.
-        /// @timeLimitMilliSec_msec on aika millisekunteina, joka function odottaa saadakseen vastauksen.
-        bool CheckStatus(const int timeLimitMilliSec, const SocketStatus status);
-
+        /// Determines the status of the Socket.
+        bool Poll(int milliSeconds, const SocketStatus status);
 };
 
 #endif // SOCKET_H

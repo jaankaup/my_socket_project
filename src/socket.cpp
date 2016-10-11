@@ -183,11 +183,18 @@ int Socket::Receive(std::string& s)
         if (infinity)
         {
             result = recv(mSocket, receiveBuffer, sizeof(receiveBuffer), MSG_WAITALL);
-            std::cout << "resutl = " << result << std::endl;
+
             // TODO: if the connection is closed from the remote end point, there will be problems.
             // We must check some how that condition.
         }
-        else result = recv(mSocket, receiveBuffer, sizeof(receiveBuffer), 0);
+        else
+        {
+            result = recv(mSocket, receiveBuffer, sizeof(receiveBuffer), 0);
+            if (result == 0) throw SocketException("Seems that the remote socket disconnected.");
+        }
+
+        //std::cout << "result = " << result << std::endl;
+        //if (infinity && result == 0) throw SocketException("Toinen osapuoli lahti latkimaan.");
 
         // If the input buffer has something for us, we must append the result to the string buffer 's'.
         if (result > 0) {
@@ -218,6 +225,7 @@ int Socket::Receive(std::string& s)
             if (error == WSAEWOULDBLOCK) {
                 return recBytes;
             }
+            // if (error == WSAECONNRESET) { std::cout << "Connection_reset_by_peer_exception()" << std::endl; }
             // There was a real error. Throw an exception.
             else throw SocketException("Socket.Receive: " + SocketError::getError(error));
         };
@@ -235,22 +243,59 @@ int Socket::ReceiveFrom(std::string& s, EndPoint& remote)
     char receiveBuffer[mReceiveBufferLength];
     int addr_len = sizeof(struct sockaddr_in);
 
-    /* Result on saatujen tavujen määrä, tai SOCKET_ERROR jos tapahtuu virhe. */
+    /* Amount of data received or socket error. */
     int result = 0;
 
-    sockaddr tempSockaddr;
+    // Just a typecast so we can call recvfrom.
+    sockaddr* pTemp = reinterpret_cast<sockaddr*>(&remote.mEndPointData);
+
+    // This switch case is not finished. It's doesn't do anything right now. This could be a better way to implement recvfrom
+    // by first checking the status of socket and then choose the right recvfrom function with right flags.
+    switch (mConnected)
+    {
+        case true: // IsConnected.
+
+            switch(mIsBlocking)
+            {
+                case true:
+                    throw std::runtime_error("Socket::ReceiveFrom: not implemented connected blocking case.");
+                    break;
+
+                case false:
+                    throw std::runtime_error("Socket::ReceiveFrom: not implemented connected non-blocking case.");
+                    break;
+            }
+        break; // IsConnected ends.
+
+        case false: // Not connected.
+
+            switch(mIsBlocking)
+            {
+                case true:
+                break;
+
+                case false:
+                break;
+            }
+        break; // NonBlocking ends.
+
+    } // switch ends.
 
     do
     {
-        /* Tsekataan voidaanko socketista lukea. Odotetaan korkeintaan mReceiveTimeout millisekuntia. */
+        /* Can we read? */
         bool ready = CheckStatus(mReceiveTimeout, SocketStatus::READ);
-        if (!ready) { return recBytes; }
+        int bytesAvailable = GetAvailableBytes(0);
+        if (IsBlocking()) ready = true; // blocking socket doesn't return now.
+        if (!ready) { return recBytes; } // Nothing to read. Non-blocking returns now;
 
+        // TODOOO!: This can't be done like this. Just read once and if the incoming data doesn't fit the rec-buffer
+        // then throw an exception. This works for ITKP104 but not in a general application.
         result = recvfrom(mSocket,
                           receiveBuffer,
                           sizeof(receiveBuffer),
                           0,
-                          &tempSockaddr,//reinterpret_cast<sockaddr*>(remote()),
+                          pTemp,
                           &addr_len);
 
         if (result > 0) {
@@ -273,7 +318,7 @@ int Socket::ReceiveFrom(std::string& s, EndPoint& remote)
             if (error == WSAEWOULDBLOCK) {
                 return recBytes;
             }
-            throw SocketException("Socket.ReceiveFrom: " + SocketError::getError(error));
+            else throw SocketException("Socket::ReceiveFrom: " + SocketError::getError(error));
         };
     } while (result > 0);
     return recBytes;
@@ -284,7 +329,7 @@ int Socket::ReceiveFrom(std::string& s, EndPoint& remote)
 int Socket::Send(const std::string& data)
 {
     const char* dataCFormat = data.c_str();
-    bool ready = CheckStatus(1000, SocketStatus::WRITE);
+    bool ready = CheckStatus(mSendTimeout, SocketStatus::WRITE);
     if (!ready) { std::cout << "EI VOI KIRJOITTAA" << std::endl; return 0; }
 
     int result = send(mSocket, dataCFormat, static_cast<int>(strlen(dataCFormat)), 0);
@@ -301,24 +346,23 @@ int Socket::Send(const std::string& data)
 int Socket::SendTo(const std::string& data, EndPoint& remote)
 {
     const char* dataCString = data.c_str();
-    bool ready = CheckStatus(10, SocketStatus::WRITE);
+    bool ready = CheckStatus(mSendTimeout, SocketStatus::WRITE);
 
-    sockaddr tempSockaddr;// = mEndpoint.ConvertToSockaddr();
+    // Just a typecast.
+    sockaddr* pTemp = reinterpret_cast<sockaddr*>(&remote.mEndPointData);
 
-    // TODO: heitä poikkeus?
-    if (!ready) { std::cout << "EI VOI KIRJOITTAA" << std::endl; return 0; }
+    if (!ready) throw SocketException("Socket::SendTo: Socket cannot send data.");
 
     int result = sendto(mSocket,
                         dataCString,
                         static_cast<int>(strlen(dataCString)),
                         0,
-                        &tempSockaddr,
-                        sizeof(struct sockaddr_in));
+                        pTemp,
+                        sizeof(struct sockaddr));
 
     if (result == SOCKET_ERROR)
     {
-        //Close();
-        SocketException("Socket::SendTo(). " + SocketError::getError(WSAGetLastError()));
+        SocketException("Socket::SendTo(): " + SocketError::getError(WSAGetLastError()));
     }
     return result;
 }
@@ -327,7 +371,6 @@ int Socket::SendTo(const std::string& data, EndPoint& remote)
 
 void Socket::Close()
 {
-    // Jos socket on invalid-tilassa, niin poistutaan.
     mConnected = false;
     if (mSocket == INVALID_SOCKET) return;
     int result = closesocket(mSocket);
@@ -362,7 +405,9 @@ std::unique_ptr<Socket> Socket::Accept()
 
     std::unique_ptr<Socket> s(new Socket(mSocketInfo.socketFamily,mSocketInfo.socketType,mSocketInfo.socketProtocol));
 
-    // This might be a bit dangerous.
+    // This might be a bit dangerous. We are modifying the EndPoint objects private attributes from socket code.
+    // If the implementation of endpoint is changed, then there might be a chance that this code will break something.
+    // Socket if a friend class to endpoint, so this is now possible.
     s->mRemoteEndPoint = remote;
     s->mSocket = result;
     s->mConnected = true;
@@ -425,16 +470,29 @@ int Socket::GetAvailableBytes(const unsigned int mm_seconds)
 
     u_long bytesAvailable = 0;
     milliseconds timeToWait(mm_seconds);
-    auto t1 = high_resolution_clock::now();
+    //auto t1 = high_resolution_clock::now();
 
-    while (!bytesAvailable && ioctlsocket(mSocket, FIONREAD, &bytesAvailable) >= 0)
+    int result = ioctlsocket(mSocket, FIONREAD, &bytesAvailable);
+
+    // Successful.
+    if (result == 0)
+    {
+        return static_cast<int>(bytesAvailable);
+    }
+    else if (result == SOCKET_ERROR)
+    {
+        throw SocketException(SocketError::getError(WSAGetLastError()));
+    }
+    throw std::runtime_error("Socket::GetAvailavleBytes: result > 0.");
+    /*
     {
         std::this_thread::sleep_for(milliseconds(mm_seconds));
         auto t2 = high_resolution_clock::now();
         milliseconds delta = duration_cast<milliseconds>(t2 - t1);
         if (timeToWait.count()-delta.count() < 0) return bytesAvailable;
     }
-    return static_cast<int>(bytesAvailable);
+    */
+    //return static_cast<int>(bytesAvailable);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -549,10 +607,26 @@ bool Socket::CheckStatus(const int timeLimit_msec, const SocketStatus status)
         {
             result = select(mSocket+1, NULL, &sockets, NULL, &tv);
         }
-        if (result == 0) return false; // Aikakatkaisu
+
+        /* Jos halutaan stekata onko socketilla jokin virhe. EI TESTATTU! */
+        else if (status == SocketStatus::SOCKERR)
+        {
+            result = select(mSocket+1, NULL, NULL, &sockets, &tv);
+        }
+
+        if (result == 0) return false; // Aikakatkaisu.
     }
+
+    // Lets wait until result is a socket error and a signal is caught.
     while (result == SOCKET_ERROR && errno == EINTR);
+
     if (result > 0 && FD_ISSET(mSocket, &sockets)) return true;
+
+    // Does this work?
+    // if (result == 0 && FD_ISSET(mSocket, &sockets) && status == SocketStatus::READ)
+    // {
+    //     throw SocketException("Socket::CheckStatus: Peer disconnected.");
+    // }
     return false;
 }
 
